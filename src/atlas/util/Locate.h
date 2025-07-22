@@ -22,6 +22,8 @@ namespace atlas::parallel {
 
 class Locator {
 public:
+
+    // Helper class that gives bracket-operator to a simple functor returning type T for a given index
     template <typename T>
     struct fspan {
         using value_type = std::remove_const_t<T>;
@@ -42,19 +44,19 @@ public:
 
     static void locate_partition(
         // context
-        fspan<const int> distribution,
+        fspan<const int> distribution, int distribution_base,
         // input
         span<const gidx_t> global_index, const gidx_t global_index_base,
         // output
-        span<int> partition);
+        span<int> partition, const int partition_base);
 
     static void locate_partition(
         // context
-        span<const int> distribution,
+        span<const int> distribution, int distribution_base,
         // input
         span<const gidx_t> global_index, const gidx_t global_index_base,
         // output
-        span<int> partition);
+        span<int> partition, const int partition_base);
 
     // Given global_index, find the corresponding partition and remote_index
     // This could be costly as it involves memory and communication
@@ -63,7 +65,8 @@ public:
         std::string_view mpi_comm,
         span<const gidx_t> my_glb_idx, const gidx_t my_global_index_base, span<const int> my_ghost,
         // input
-        span<const gidx_t> global_index, const gidx_t global_index_base, span<const int> partition,
+        span<const gidx_t> global_index, const gidx_t global_index_base,
+        span<const int> partition, const int partition_base,
         // output
         span<idx_t> remote_index, const idx_t remote_index_base
     );
@@ -78,36 +81,40 @@ public:
         // context
         std::string_view mpi_comm,
         span<const gidx_t> my_glb_idx, const gidx_t my_global_index_base, span<const int> my_ghost,
-        fspan<const int> distribution,
+        fspan<const int> distribution, const int distribution_base,
         // input
         span<const gidx_t> global_index, const gidx_t global_index_base,
         // output
-        span<int> partition, span<idx_t> remote_index, const idx_t remote_index_base);
+        span<int> partition, const int partition_base,
+        span<idx_t> remote_index, const idx_t remote_index_base);
 
     static void locate(
         // context
         std::string_view mpi_comm,
         span<const gidx_t> my_glb_idx, const gidx_t my_global_index_base, span<const int> my_ghost,
-        span<const int> distribution,
+        span<const int> distribution, const int distribution_base,
         // input
         span<const gidx_t> global_index, const gidx_t global_index_base,
         // output
-        span<int> partition, span<idx_t> remote_index, const idx_t remote_index_base);
+        span<int> partition, const int partition_base,
+        span<idx_t> remote_index, const idx_t remote_index_base);
 
     virtual void locate(
         // input
         span<const gidx_t> global_index, const gidx_t global_index_base,
         // output
-        span<int> partition, span<idx_t> remote_index, const idx_t remote_index_base) const = 0;
+        span<int> partition, const int partition_base,
+        span<idx_t> remote_index, const idx_t remote_index_base) const = 0;
 
     virtual void locate(
         // input
         const std::vector<gidx_t> global_index, const gidx_t global_index_base,
         // output
-        std::vector<int>& partition, std::vector<idx_t>& remote_index, const idx_t remote_index_base) const {
+        std::vector<int>& partition, const int partition_base,
+        std::vector<idx_t>& remote_index, const idx_t remote_index_base) const {
             locate(
                 span<const gidx_t>{global_index.data(), global_index.size()}, global_index_base,
-                span<int>{partition.data(), partition.size()},
+                span<int>{partition.data(), partition.size()}, partition_base,
                 span<idx_t>{remote_index.data(), remote_index.size()}, remote_index_base
             );
         }
@@ -115,25 +122,29 @@ public:
 };
 } // namespace atlas::parallel
 
-#include "atlas/functionspace/FunctionSpace.h"
+#include "atlas/field/Field.h"
+#include "atlas/grid/Distribution.h"
 
 namespace atlas::functionspace {
 class Locator : public ::atlas::parallel::Locator {
 public:
-    Locator(FunctionSpace fs);
+    Locator(const FunctionSpace& fs);
 
     using ::atlas::parallel::Locator::locate;
     void locate(
         // input
         span<const gidx_t> global_index, const gidx_t global_index_base,
         // output
-        span<int> partition, span<idx_t> remote_index, const idx_t remote_index_base) const override;
+        span<int> partition, const int partition_base,
+        span<idx_t> remote_index, const idx_t remote_index_base) const override;
 
 private:
-    FunctionSpace fs_;
-    ::atlas::vector<int> distribution_array_;
+    vector<int> distribution_array_;
     std::function<int(size_t)> distribution_function_;
     size_t distribution_size_;
+    const Field fs_global_index_;
+    const Field fs_ghost_;
+    std::string mpi_comm_;
 };
 
 } // namespace atlas::functionspace

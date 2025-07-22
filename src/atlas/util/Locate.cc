@@ -20,31 +20,33 @@ namespace atlas::parallel {
 // Given distribution and global_index, find the corresponding partition for each global index
 // The global-index is typically 1-based
 void Locator::locate_partition(
-    fspan<const int> distribution,
+    fspan<const int> distribution, const int distribution_base,
     span<const gidx_t> global_index, const gidx_t global_index_base,
-    span<int> partition) {
+    span<int> partition, const int partition_base) {
 
     ATLAS_TRACE("atlas::util::locate_partition");
     std::size_t size = global_index.size();
     for (std::size_t j = 0; j < size; ++j) {
         auto gidx = global_index[j] - global_index_base;
         ATLAS_ASSERT(gidx < distribution.size());
-        partition[j] = distribution[gidx];
+        auto p = distribution[gidx] - distribution_base;
+        partition[j] = p + partition_base;
     }
 }
 
 // Given distribution and global_index, find the corresponding partition for each global index
 // The global-index is typically 1-based
 void Locator::locate_partition(
-    span<const int> distribution,
+    span<const int> distribution, const int distribution_base,
     span<const gidx_t> global_index, const gidx_t global_index_base,
-    span<int> partition) {
+    span<int> partition, const int partition_base) {
     ATLAS_TRACE("atlas::util::locate_partition");
     std::size_t size = global_index.size();
     for (std::size_t j = 0; j < size; ++j) {
-        auto gidx = global_index[j] - global_index_base;
+        gidx_t gidx = global_index[j] - global_index_base;
         ATLAS_ASSERT(gidx < distribution.size());
-        partition[j] = distribution[gidx];
+        int p = distribution[gidx] - distribution_base;
+        partition[j] = p + partition_base;
     }
 }
 
@@ -53,7 +55,8 @@ void Locator::locate_partition(
 void Locator::locate_remote_index(
     const std::string_view mpi_comm,
     span<const gidx_t> my_glb_idx, const gidx_t my_glb_idx_base, span<const int> my_ghost,
-    span<const gidx_t> global_index, const gidx_t global_index_base, span<const int> partition,
+    span<const gidx_t> global_index, const gidx_t global_index_base,
+    span<const int> partition, const int partition_base,
     span<idx_t> remote_index, const idx_t remote_index_base) {
 
     ATLAS_TRACE("atlas::util::locate_remote_index");
@@ -66,7 +69,7 @@ void Locator::locate_remote_index(
         std::vector<std::vector<gidx_t>> send_gidx(mpi_size);
         std::vector<std::size_t> send_counts(mpi_size,0);
         for (std::size_t j=0; j<size; ++j) {
-            int p = partition[j];
+            int p = partition[j] - partition_base;
             ++send_counts[p];
         }
         for (int p=0; p<mpi_size; ++p) {
@@ -74,7 +77,7 @@ void Locator::locate_remote_index(
         }
         for (std::size_t j=0; j<size; ++j) {
             gidx_t gidx = global_index[j] - global_index_base;
-            int p = partition[j];
+            int p = partition[j] - partition_base;
             send_gidx[p].emplace_back(gidx);
         }
         comm.allToAll(send_gidx, recv_gidx);
@@ -101,7 +104,7 @@ void Locator::locate_remote_index(
     }
     std::vector<std::size_t> c(mpi_size,0);
     for( idx_t j=0; j<size; ++j) {
-        int p = partition[j];
+        int p = partition[j] - partition_base;
         remote_index[j] = recv_ridx[p][c[p]++] + remote_index_base;
     }
 }
@@ -115,40 +118,45 @@ void Locator::locate_remote_index(
 // output of locate: partition, remote_index, remote_index_base
 void Locator::locate( const std::string_view mpi_comm, 
     span<const gidx_t> my_glb_idx, const gidx_t my_glb_idx_base, span<const int> my_ghost,
-    fspan<const int> distribution,
+    fspan<const int> distribution, const int distribution_base,
     span<const gidx_t> global_index, const gidx_t global_index_base,
-    span<int> partition, span<idx_t> remote_index, const idx_t remote_index_base) {
+    span<int> partition, const int partition_base,
+    span<idx_t> remote_index, const idx_t remote_index_base) {
 
     ATLAS_TRACE("atlas::util::locate");
 
-    locate_partition(distribution, global_index, global_index_base,
-                     partition);
+    locate_partition(distribution, distribution_base, global_index, global_index_base,
+                     partition, partition_base);
 
     locate_remote_index(mpi_comm, my_glb_idx, my_glb_idx_base, my_ghost,
-                        global_index, global_index_base, partition,
+                        global_index, global_index_base,
+                        partition, partition_base,
                         remote_index, remote_index_base);
 }
 
 void Locator::locate( const std::string_view mpi_comm, 
     span<const gidx_t> my_glb_idx, const gidx_t my_glb_idx_base, span<const int> my_ghost,
-    span<const int> distribution,
+    span<const int> distribution, const int distribution_base,
     span<const gidx_t> global_index, const gidx_t global_index_base,
-    span<int> partition, span<idx_t> remote_index, const idx_t remote_index_base) {
+    span<int> partition, const int partition_base,
+    span<idx_t> remote_index, const idx_t remote_index_base) {
 
     ATLAS_TRACE("atlas::util::locate");
 
-    locate_partition(distribution, global_index, global_index_base,
-                     partition);
+    locate_partition(distribution, distribution_base,
+                     global_index, global_index_base,
+                     partition, partition_base);
 
     locate_remote_index(mpi_comm, my_glb_idx, my_glb_idx_base, my_ghost,
-                        global_index, global_index_base, partition,
+                        global_index, global_index_base,
+                        partition, partition_base,
                         remote_index, remote_index_base);
 }
 
 } // atlas::parallel
 
 
-#include "atlas/field/Field.h"
+#include "atlas/functionspace/FunctionSpace.h"
 #include "atlas/array/ArrayView.h"
 #include "atlas/array/Array.h"
 #include "atlas/option.h"
@@ -177,44 +185,48 @@ static atlas::vector<int> allgather_distribution_array(const FunctionSpace& fs) 
     return distribution_array;
 }
 
-Locator::Locator(FunctionSpace fs) : fs_(fs) {
-    distribution_array_ = allgather_distribution_array(fs_);
+Locator::Locator(const FunctionSpace& fs) :
+    fs_global_index_{fs.global_index()},
+    fs_ghost_{fs.ghost()} {
+    distribution_array_ = allgather_distribution_array(fs);
     distribution_function_ = [this](gidx_t j){ return distribution_array_[j]; };
     distribution_size_ = distribution_array_.size();
+    mpi_comm_ = fs.mpi_comm();
 }
 
 void Locator::locate(
     // input
     span<const gidx_t> global_index, const gidx_t global_index_base,
     // output
-    span<int> partition, span<idx_t> remote_index, const idx_t remote_index_base) const {
+    span<int> partition, const int partition_base,
+    span<idx_t> remote_index, const idx_t remote_index_base) const {
     constexpr gidx_t fs_global_index_base_ = 1;
+    constexpr int distribution_base_ = 0;
     if (distribution_array_.size()) {
         ::atlas::parallel::Locator::locate(
             // context
-            fs_.mpi_comm(),
-            array::make_view<gidx_t,1>(fs_.global_index()).as_mdspan(),
-            fs_global_index_base_,
-            array::make_view<int,1>(fs_.ghost()).as_mdspan(),
-            span<const int>{distribution_array_.data(), distribution_array_.size()},
+            mpi_comm_,
+            array::make_view<const gidx_t,1>(fs_global_index_).as_mdspan(), fs_global_index_base_,
+            array::make_view<const int,1>(fs_ghost_).as_mdspan(),
+            span<const int>{distribution_array_.data(), distribution_array_.size()}, distribution_base_,
             // input
             global_index, global_index_base,
             // output
-            partition,
+            partition, partition_base,
             remote_index, remote_index_base);
     }
     else {
         ::atlas::parallel::Locator::locate(
             // context
-            fs_.mpi_comm(),
-            array::make_view<gidx_t,1>(fs_.global_index()).as_mdspan(),
+            mpi_comm_,
+            array::make_view<const gidx_t,1>(fs_global_index_).as_mdspan(),
             fs_global_index_base_,
-            array::make_view<int,1>(fs_.ghost()).as_mdspan(),
-            fspan<const int>{&distribution_function_, distribution_size_},
+            array::make_view<const int,1>(fs_ghost_).as_mdspan(),
+            fspan<const int>{&distribution_function_, distribution_size_}, distribution_base_,
             // input
             global_index, global_index_base,
             // output
-            partition,
+            partition, partition_base,
             remote_index, remote_index_base);
     }
 }

@@ -210,6 +210,7 @@ namespace atlas::test {
 CASE("real test") {
     const idx_t  remote_index_base = ATLAS_HAVE_FORTRAN;
     const gidx_t global_index_base = 1; // convention
+    const int partition_base = 0;
 
     int mpi_rank = mpi::comm().rank();
     int mpi_size = mpi::comm().size();
@@ -234,7 +235,8 @@ CASE("real test") {
     functionspace::Locator locator(fs);
     locator.locate(
         receive_gidx, global_index_base,
-        receive_part, receive_ridx, remote_index_base);
+        receive_part, partition_base,
+        receive_ridx, remote_index_base);
 
     parallel::Collect collect;
     collect.setup(receive_part.size(), receive_part.data(),receive_ridx.data(),remote_index_base);
