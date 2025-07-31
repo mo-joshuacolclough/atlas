@@ -203,7 +203,7 @@ CASE("test_all_to_all rank 2") {
 #include "atlas/parallel/mpi/mpi.h"
 #include "atlas/grid.h"
 #include "atlas/functionspace.h"
-#include "atlas/util/Locate.h"
+#include "atlas/functionspace/Locate.h"
 
 namespace atlas::test {
 

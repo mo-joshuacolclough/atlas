@@ -121,30 +121,3 @@ public:
 
 };
 } // namespace atlas::parallel
-
-#include "atlas/field/Field.h"
-#include "atlas/grid/Distribution.h"
-
-namespace atlas::functionspace {
-class Locator : public ::atlas::parallel::Locator {
-public:
-    Locator(const FunctionSpace& fs);
-
-    using ::atlas::parallel::Locator::locate;
-    void locate(
-        // input
-        span<const gidx_t> global_index, const gidx_t global_index_base,
-        // output
-        span<int> partition, const int partition_base,
-        span<idx_t> remote_index, const idx_t remote_index_base) const override;
-
-private:
-    vector<int> distribution_array_;
-    std::function<int(size_t)> distribution_function_;
-    size_t distribution_size_;
-    const Field fs_global_index_;
-    const Field fs_ghost_;
-    std::string mpi_comm_;
-};
-
-} // namespace atlas::functionspace
