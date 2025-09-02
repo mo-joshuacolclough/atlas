@@ -114,7 +114,7 @@ ecbuild_add_test( TARGET atlas_test_interpolation_bicubic_gpu
   SOURCES test_interpolation_structured2D_gpu.cc
   LIBS     atlas
   CONDITION atlas_HAVE_GPU
-  ENVIRONMENT ${ATLAS_TEST_ENVIRONMENT}
+  ENVIRONMENT ${ATLAS_TEST_ENVIRONMENT} ATLAS_RUN_NGPUS=1
 )
 if( TEST atlas_test_interpolation_bicubic_gpu )
   set_tests_properties(atlas_test_interpolation_bicubic_gpu  PROPERTIES LABELS "gpu")
@@ -141,7 +141,7 @@ ecbuild_add_test( TARGET atlas_test_interpolation_structured2D_to_points_gpu
   LIBS     atlas
   MPI      4
   CONDITION eckit_HAVE_MPI AND atlas_HAVE_GPU
-  ENVIRONMENT ${ATLAS_TEST_ENVIRONMENT}
+  ENVIRONMENT ${ATLAS_TEST_ENVIRONMENT} ATLAS_RUN_NGPUS=1
 )
 if( TEST atlas_test_interpolation_structured2D_to_points_gpu )
   set_tests_properties(atlas_test_interpolation_structured2D_to_points_gpu PROPERTIES LABELS "gpu")
