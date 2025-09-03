@@ -428,16 +428,22 @@ Method::Method(const Method::Config& config) {
     config.get("adjoint", adjoint_);
 }
 
+void Method::computeMatrixAdjoint() {
+    ATLAS_ASSERT(matrix_);
+    if (not matrix_->empty()) {
+        eckit::linalg::SparseMatrix matrix_copy = make_eckit_sparse_matrix(*matrix_); // Makes a copy!
+        matrix_copy.transpose(); // transpose the copy in place
+        matrix_transpose_ = linalg::make_sparse_matrix_storage(std::move(matrix_copy)); // Move the copy into storage
+    }
+}
+
 void Method::setup(const FunctionSpace& source, const FunctionSpace& target) {
     ATLAS_TRACE("atlas::interpolation::method::Method::setup(FunctionSpace, FunctionSpace)");
     this->do_setup(source, target);
 
-    if (adjoint_ && target.size() > 0 && matrixAllocated()) {
-        if (not matrix_->empty()) {
-            eckit::linalg::SparseMatrix matrix_copy = make_eckit_sparse_matrix(*matrix_); // Makes a copy!
-            matrix_copy.transpose(); // transpose the copy in place
-            matrix_transpose_ = linalg::make_sparse_matrix_storage(std::move(matrix_copy)); // Move the copy into storage
-        }
+    if (target.size() > 0 && adjoint_) {
+        ATLAS_ASSERT(matrix_, "Cannot compute adjoint for matrix-free interpolation methods");
+        ATLAS_ASSERT(not matrix_transpose_.empty());
     }
 }
 

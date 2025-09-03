@@ -105,6 +105,7 @@ protected:
     friend class interpolation::MatrixCache;
 
 protected:
+    void computeMatrixAdjoint();
 
     void setMatrix(Matrix&& m, const std::string& uid = "") {
         if (not matrix_shared_) {
@@ -114,6 +115,9 @@ protected:
         matrix_cache_ = interpolation::MatrixCache(matrix_shared_, uid);
         matrix_       = &matrix_cache_.matrix();
 
+        if (adjoint_) {
+            computeMatrixAdjoint();
+        }
     }
 
     void setMatrix(interpolation::MatrixCache matrix_cache) {
