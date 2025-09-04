@@ -110,7 +110,7 @@ using HIC_SYMBOL(PointerAttributes) = HIC_BACKEND_SYMBOL(PointerAttribute_t);
 // From CUDA 13.0 (released August 2025), the signature of cudaMemPrefetchAsync has changed
 // With hic, we are staying for now compatible with CUDA < 13.0.
 #if CUDART_VERSION >= 13 * 1000 + 0 * 10
-hicError_t hicMemPrefetchAsync (const void* devPtr, size_t count, int dstDevice, hicStream_t stream = 0) {
+inline hicError_t hicMemPrefetchAsync (const void* devPtr, size_t count, int dstDevice, hicStream_t stream = 0) {
     if (dstDevice == cudaCpuDeviceId) {
         cudaMemLocation location;
         location.type = cudaMemLocationTypeHostNumaCurrent;
