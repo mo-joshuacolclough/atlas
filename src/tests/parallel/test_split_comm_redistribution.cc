@@ -81,6 +81,7 @@ struct AtlasSplitCommEnvironment : public AtlasTestEnvironment {
     }
 };
 
+const atlas::mpi::Comm& parent_comm() { return atlas::mpi::comm("world"); }
 const atlas::mpi::Comm& split_comm() { return atlas::mpi::comm(AtlasSplitCommEnvironment::s_split_comm_name); }
 
 //-----------------------------------------------------------------------------
@@ -90,7 +91,16 @@ CASE("test_split_comm_redistribution") {
     // [0, 1, 2]  :  0
     // [3]        :  1
   
-    eckit::mpi::setCommDefault(AtlasSplitCommEnvironment::s_split_comm_name);
+    /*
+     * Start on the parent communicator, with distribution `D`.
+     * Then, split comm and create a distribution `d`. Then, convert
+     * `d` to be a global distribution `D_d`. This takes a field on a world comm
+     * and distributes it only to a sub comm with distribution `d`.
+     *
+     * `D --D_d--> d`
+    */
+
+    eckit::mpi::setCommDefault(parent_comm().name());
 
     // === LOCAL GROUP ===
     if (colour_management::get_colour() == 1) {
@@ -99,16 +109,17 @@ CASE("test_split_comm_redistribution") {
   
     const std::string grid_name = "O8";
     const auto grid = Grid(grid_name);
-  
     grid::Partitioner partition_scheme("equal_area");
-    grid::Distribution comm_dist = partition_scheme.partition(grid);
+  
+    // D
+    grid::Distribution parent_dist = partition_scheme.partition(grid);
   
     // Partitioned either on 1 PE or 3 PEs depending on group.
-    functionspace::StructuredColumns comm_fspace(grid, comm_dist);
-    Field comm_field = comm_fspace.createField<float>(atlas::option::name("comm_field"));
+    functionspace::StructuredColumns parent_fspace(grid, parent_dist);
+    Field parent_field = parent_fspace.createField<int>(atlas::option::name("comm_field"));
 
-    field::for_each_value(comm_field, [&](float& x) {
-        x = static_cast<float>(colour_management::get_colour() + 1);
+    field::for_each_value(parent_field, [&](int& x) {
+        x = colour_management::get_colour() + 1;
     });
 
     /*
@@ -121,28 +132,26 @@ CASE("test_split_comm_redistribution") {
     */
   
     // === GLOBAL GROUP ===
-    eckit::mpi::setCommDefault("world");
+    eckit::mpi::setCommDefault(split_comm().name());
 
-    grid::Distribution global_dist = partition_scheme.partition(grid);
-    functionspace::StructuredColumns global_fspace(grid, global_dist);
+    // d
+    grid::Distribution comm_dist = partition_scheme.partition(grid);
+    EXPECT(comm_dist.size() == parent_dist.size());
 
-    functionspace::StructuredColumns comm_fspace_some_empty(grid, comm_dist);
-    Redistribution redist_to_empty(comm_fspace, comm_fspace_some_empty);
+    // Create D_d : Distribution of `d` on a parent comm distribution `D`
+    std::vector<int> parent_to_comm_dist_data(parent_dist.size(), -1);
 
-    Redistribution redist(comm_fspace_some_empty, global_fspace);
+    // Convert the local colour rank to parent ranks.
+    const size_t rank_offset = colour_management::colour_rank_offset(split_comm());
 
-    // (global in terms of comm distribution)
-    Field group0 = global_fspace.createField<float>(atlas::option::name("group0"));
-    Field group1 = global_fspace.createField<float>(atlas::option::name("group1"));
-
-    eckit::mpi::setCommDefault(AtlasSplitCommEnvironment::s_split_comm_name);
-    if (colour_management::get_colour() == 0) {
-        redist.execute(comm_field, group0);
-    } else if (colour_management::get_colour() == 1) {
-        redist.execute(comm_field, group1);
+    for (gidx_t global_idx = 0; global_idx < comm_dist.size(); ++global_idx) {
+      parent_to_comm_dist_data[global_idx] = rank_offset + comm_dist.partition(global_idx);
     }
 
-    eckit::mpi::setCommDefault("world");
+    // D_d
+    const int numPartitions = parent_comm().size();
+    const int globalSize = parent_to_comm_dist_data.size();
+    grid::Distribution D_d(numPartitions, globalSize, parent_to_comm_dist_data.data());
 }
 
 //-----------------------------------------------------------------------------
