@@ -108,7 +108,7 @@ CASE("test_split_comm_redistribution") {
     Field comm_field = comm_fspace.createField<float>(atlas::option::name("comm_field"));
 
     field::for_each_value(comm_field, [&](float& x) {
-        x = static_cast<float>(colour_management::get_colour());
+        x = static_cast<float>(colour_management::get_colour() + 1);
     });
 
     /*
@@ -122,46 +122,27 @@ CASE("test_split_comm_redistribution") {
   
     // === GLOBAL GROUP ===
     eckit::mpi::setCommDefault("world");
-  
-    const size_t rankInColour = split_comm().rank();
-  
-    // -- Convert comm distribution to global ranks.
-    const idx_t npts = comm_dist.nb_pts()[rankInColour];
-    worldlog() << "Partition size = " << npts << std::endl;
-  
-    const gidx_t part_offset = [&]() {
-        gidx_t offset = 0;
-        for (size_t r = 1; r < rankInColour + 1; ++r) {
-            offset += static_cast<gidx_t>(comm_dist.nb_pts()[r - 1]);
-        }
-        return offset;
-    }();
-  
-    const size_t colour_rank_offset = colour_management::colour_rank_offset(split_comm());
-  
-    const gidx_t num_grid_points = comm_dist.size();
-    std::vector<int> partitioning(num_grid_points, -1);
-    // Convert
-    for (gidx_t global_idx = 0; global_idx < num_grid_points; ++global_idx) {
-        partitioning[global_idx] = colour_rank_offset + comm_dist.partition(global_idx);
-    }
-  
-    const size_t world_size = atlas::mpi::comm("world").size();
-    grid::Distribution global_dist(world_size, num_grid_points, partitioning.data());
-    worldlog() << "GLOBAL SIZE == " << global_dist.size() << std::endl;
 
-    if (colour_management::get_colour() == 1 && split_comm().rank() == 0) {
-      const gidx_t g_size = global_dist.size();
-      for (gidx_t ij = 0; ij < g_size; ++ij) {
-        worldlog() << "GLOBAL " << ij << " ==> " << global_dist.partition(ij) << std::endl;
-      }
-    }
+    grid::Distribution global_dist = partition_scheme.partition(grid);
+    functionspace::StructuredColumns global_fspace(grid, global_dist);
 
-    //functionspace::StructuredColumns global_fspace(grid, global_dist);
-    
+    functionspace::StructuredColumns comm_fspace_some_empty(grid, comm_dist);
+    Redistribution redist_to_empty(comm_fspace, comm_fspace_some_empty);
+
+    Redistribution redist(comm_fspace_some_empty, global_fspace);
+
     // (global in terms of comm distribution)
-    //Field global_field = comm_fspace.createField<float>(atlas::option::name("global_field"));
+    Field group0 = global_fspace.createField<float>(atlas::option::name("group0"));
+    Field group1 = global_fspace.createField<float>(atlas::option::name("group1"));
 
+    eckit::mpi::setCommDefault(AtlasSplitCommEnvironment::s_split_comm_name);
+    if (colour_management::get_colour() == 0) {
+        redist.execute(comm_field, group0);
+    } else if (colour_management::get_colour() == 1) {
+        redist.execute(comm_field, group1);
+    }
+
+    eckit::mpi::setCommDefault("world");
 }
 
 //-----------------------------------------------------------------------------
