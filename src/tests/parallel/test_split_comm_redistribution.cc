@@ -100,58 +100,87 @@ CASE("test_split_comm_redistribution") {
      * `D --D_d--> d`
     */
 
+    worldlog () << "======== INIT. GROUP SIZE = " << split_comm().size() << " ========" << std::endl;
+
     eckit::mpi::setCommDefault(parent_comm().name());
 
-    // === LOCAL GROUP ===
-    if (colour_management::get_colour() == 1) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-    }
-  
+    // === PARENT GROUP ===
     const std::string grid_name = "O8";
     const auto grid = Grid(grid_name);
-    grid::Partitioner partition_scheme("equal_area");
+    grid::Partitioner parent_partition_scheme("equal_area", parent_comm().size());
+    worldlog() << "Parent NB partitions = " << parent_partition_scheme.nb_partitions() << std::endl;
   
     // D
-    grid::Distribution parent_dist = partition_scheme.partition(grid);
+    grid::Distribution parent_dist = parent_partition_scheme.partition(grid);
+
+    if (parent_comm().rank() == 1) {
+      for (gidx_t global_idx = 0; global_idx < parent_dist.size(); ++global_idx) {
+        worldlog() << "parent_dist " << global_idx << " => " << parent_dist.partition(global_idx) << std::endl;
+      }
+    }
+
   
     // Partitioned either on 1 PE or 3 PEs depending on group.
     functionspace::StructuredColumns parent_fspace(grid, parent_dist);
-    Field parent_field = parent_fspace.createField<int>(atlas::option::name("comm_field"));
+    Field parent_field = parent_fspace.createField<int>(atlas::option::name("parent_field"));
 
     field::for_each_value(parent_field, [&](int& x) {
         x = colour_management::get_colour() + 1;
     });
 
-    /*
-    if (atlas::mpi::comm().rank() == 0) {
-      const gidx_t g_size = comm_dist.size();
-      for (gidx_t ij = 0; ij < g_size; ++ij) {
-        worldlog() << ij << " ==> " << comm_dist.partition(ij) << std::endl;
-      }
-    }
-    */
-  
-    // === GLOBAL GROUP ===
+
+    // === SPLIT GROUP ===
     eckit::mpi::setCommDefault(split_comm().name());
 
     // d
-    grid::Distribution comm_dist = partition_scheme.partition(grid);
+    grid::Partitioner comm_partition_scheme("equal_area", split_comm().size());
+    grid::Distribution comm_dist = comm_partition_scheme.partition(grid);
     EXPECT(comm_dist.size() == parent_dist.size());
+
+    worldlog() << "COMM NB partitions = " << comm_partition_scheme.nb_partitions() << std::endl;
 
     // Create D_d : Distribution of `d` on a parent comm distribution `D`
     std::vector<int> parent_to_comm_dist_data(parent_dist.size(), -1);
 
     // Convert the local colour rank to parent ranks.
     const size_t rank_offset = colour_management::colour_rank_offset(split_comm());
+    worldlog() << " rank_offset  =  " << rank_offset << std::endl;
 
     for (gidx_t global_idx = 0; global_idx < comm_dist.size(); ++global_idx) {
+      if (parent_comm().rank() == 1) {
+        worldlog() << "comm_dist " << global_idx << " => " << comm_dist.partition(global_idx) << std::endl;
+      }
       parent_to_comm_dist_data[global_idx] = rank_offset + comm_dist.partition(global_idx);
+    }
+
+    if (parent_comm().rank() == 1) {
+      gidx_t g = 0;
+      for (const auto& r : parent_to_comm_dist_data) {
+        worldlog() << "parent_to_comm " << g << " => " << r << std::endl;
+        ++g;
+      }
     }
 
     // D_d
     const int numPartitions = parent_comm().size();
     const int globalSize = parent_to_comm_dist_data.size();
-    grid::Distribution D_d(numPartitions, globalSize, parent_to_comm_dist_data.data());
+    grid::Distribution parent_to_comm_dist(numPartitions, globalSize, parent_to_comm_dist_data.data());
+
+    //                        Distributions set up.
+    // ========================================================================
+    // === GLOBAL GROUP ===
+    eckit::mpi::setCommDefault(parent_comm().name());
+    // Back on global now. Redistribute field onto correct split comm ranks.
+
+    functionspace::StructuredColumns parent_to_comm_fspace(grid, parent_to_comm_dist);
+
+    worldlog() << "Making distribution..." << std::endl;
+    Redistribution parent_to_comm_redist(parent_fspace, parent_to_comm_fspace);
+      
+    // NOTE that for example, the Field on rank 4 may be empty. Because code will do different
+    // operations based on colour then this is not an issue.
+    //Field parent_to_comm_field = parent_to_comm_fspace.createField<int>(atlas::option::name("parent_to_comm"));
+
 }
 
 //-----------------------------------------------------------------------------
