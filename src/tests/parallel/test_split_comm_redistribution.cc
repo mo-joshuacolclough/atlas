@@ -130,7 +130,6 @@ CASE("test_split_comm_redistribution") {
 
 
     // === SPLIT GROUP ===
-    eckit::mpi::setCommDefault(split_comm().name());
 
     // d
     grid::Partitioner comm_partition_scheme("equal_area", split_comm().size());
@@ -169,7 +168,7 @@ CASE("test_split_comm_redistribution") {
     //                        Distributions set up.
     // ========================================================================
     // === GLOBAL GROUP ===
-    eckit::mpi::setCommDefault(parent_comm().name());
+
     // Back on global now. Redistribute field onto correct split comm ranks.
 
     functionspace::StructuredColumns parent_to_comm_fspace(grid, parent_to_comm_dist);
