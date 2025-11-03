@@ -264,9 +264,10 @@ struct ForEach<Rank, Rank> {
 }  // namespace
 
 void RedistributeGeneric::do_setup() {
-    ATLAS_ASSERT( source().mpi_comm() == target().mpi_comm() );
+    // ATLAS_ASSERT( source().mpi_comm() == target().mpi_comm() );
 
-    mpi_comm_ = source().mpi_comm();
+    // DEBUG(JC): Use eckit default comm for redistribution.
+    mpi_comm_ = mpi::comm().name();  //source().mpi_comm();
 
     // get a unique ID (UID) for each owned member of functionspace.
     const auto sourceUidVec = getUidVec(source());
