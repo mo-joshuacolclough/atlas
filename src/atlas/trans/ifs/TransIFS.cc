@@ -1173,6 +1173,13 @@ void TransIFS::ctor_rgg(const long nlat, const idx_t pl[], long truncation, cons
     for (long jlat = 0; jlat < nlat; ++jlat) {
         nloen[jlat] = pl[jlat];
     }
+
+    // ERROR(JC): Issue here with dirac_parallel_hybrid_sp2cs.
+    //            Starts with mpi size = 1 (split) so doesn't set up mpi.
+    //            Then tries doing with size = 2 - MPL not setup and generally error anyway.
+
+    // Set MPI communicator to the same as Atlas. Must be set prior to MPL_INIT in ectrans/fiat.
+    TRANS_CHECK(::trans_set_mpi_comm(mpi::comm().communicator()));
     TRANS_CHECK(::trans_new(trans_.get()));
     TRANS_CHECK(::trans_use_mpi(mpi::size() > 1));
     TRANS_CHECK(::trans_set_resol(trans_.get(), nlat, nloen.data()));
@@ -1204,6 +1211,7 @@ void TransIFS::ctor_rgg(const long nlat, const idx_t pl[], long truncation, cons
 
 void TransIFS::ctor_lonlat(const long nlon, const long nlat, long truncation, const eckit::Configuration& config) {
     TransParameters p(*this, config);
+    TRANS_CHECK(::trans_set_mpi_comm(mpi::comm().communicator()));
     TRANS_CHECK(::trans_new(trans_.get()));
     TRANS_CHECK(::trans_use_mpi(mpi::size() > 1));
     TRANS_CHECK(::trans_set_resol_lonlat(trans_.get(), nlon, nlat));
