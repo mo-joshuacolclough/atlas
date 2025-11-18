@@ -10,6 +10,8 @@
 #include "atlas/functionspace.h"
 #include "atlas/util/Object.h"
 
+#include <utility>
+
 namespace atlas {
 class Field;
 class FieldSet;

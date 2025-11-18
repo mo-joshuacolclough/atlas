@@ -5,6 +5,8 @@
  * which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
  */
 
+#include <fstream>
+#include <iostream>
 #include <numeric>
 #include <vector>
 
@@ -15,8 +17,10 @@
 #include "atlas/functionspace/PointCloud.h"
 #include "atlas/functionspace/StructuredColumns.h"
 #include "atlas/parallel/mpi/mpi.h"
+#include "atlas/runtime/Log.h"
 #include "atlas/redistribution/detail/RedistributeGeneric.h"
 #include "atlas/redistribution/detail/RedistributionImplFactory.h"
+#include "atlas/util/Unique.h"
 #include "atlas/util/Unique.h"
 
 
@@ -27,8 +31,23 @@ namespace detail {
 using mesh::HybridElements;
 using mesh::Nodes;
 
+std::ostream& nullfile() {
+  static std::ofstream ofile;
+  return ofile;
+}
+
+
 // Helper type definitions and functions for redistribution.
 namespace {
+
+std::ostream& worldlog() {
+  if (mpi::comm("world").rank() == 0) {
+    return Log::info() << mpi::comm("world").rank() << "[" << mpi::comm().rank() << "/" << mpi::comm().size() << "] ";
+  } else {
+    return nullfile();
+  }
+}
+
 
 // Define index-UID struct. (Needed to overload "<").
 struct IdxUid : public std::pair<idx_t, uidx_t> {
@@ -120,6 +139,13 @@ std::vector<IdxUid> getUidVec(const FunctionSpace& functionspace) {
 
     // Check UIDs are unique.
     if (ATLAS_BUILD_TYPE_DEBUG) {
+        std::vector<uidx_t> uidSecondOnly(uidVec.size());
+        for (size_t idx = 0; idx < uidVec.size(); ++idx) {
+          uidSecondOnly[idx] = uidVec[idx].second;
+        }
+
+        worldlog() << "UID FIELD" << uidSecondOnly << std::endl;
+
         auto first_duplicate = std::adjacent_find(
             uidVec.begin(), uidVec.end(), [](const IdxUid& a, const IdxUid& b) { return a.second == b.second; });
         ATLAS_ASSERT(uidVec.end() == first_duplicate, "Unique ID set has duplicate members");
@@ -176,22 +202,39 @@ bool operator<(const uidx_t& lhs, const IdxUid& rhs) {
 
 // Find the intersection between local and global UIDs, then return local
 // indices of incections and PE dispacements in vector.
-std::pair<std::vector<idx_t>, std::vector<int>> getUidIntersection(const std::string& mpi_comm,
-                                                                   const std::vector<IdxUid>& localUids,
-                                                                   const std::vector<uidx_t>& globalUids,
+std::pair<std::vector<idx_t>, std::vector<int>> getUidIntersection(const std::vector<IdxUid>& localUids,  // target
+                                                                   const std::vector<uidx_t>& globalUids, // source global
                                                                    const std::vector<int>& globalDisps) {
+    static int call_count = -1;
+    call_count++;
+
     auto uidIntersection = std::vector<IdxUid>{};
     uidIntersection.reserve(localUids.size());
 
-    auto& comm = mpi::comm(mpi_comm);
-    auto mpi_size = comm.size();
+        std::vector<idx_t> localUidsFirstOnly(localUids.size());
+        std::vector<uidx_t> localUidsSecondOnly(localUids.size());
+        for (size_t idx = 0; idx < localUids.size(); ++idx) {
+          localUidsFirstOnly[idx] = localUids[idx].first;
+          localUidsSecondOnly[idx] = localUids[idx].second;
+        }
+
+    worldlog() << "{ localUids.size()   => " << localUids.size() << std::endl
+               << "  localUids          => " << localUidsFirstOnly << " :: " << localUidsSecondOnly << std::endl
+               << "  globalUids.size()  => " << globalUids.size() << std::endl
+               << "  globalUids         => " << globalUids << std::endl
+               << "  globalDisps.size() => " << globalDisps.size() << std::endl
+               << "  globalDisps        => " << globalDisps << std::endl;
+
+    //ATLAS_ASSERT(mpi_size + 1 == globalDisps.size());
+
+    const size_t mpi_size_parent = globalDisps.size();
 
     auto disps = std::vector<int>{};
-    disps.reserve(mpi_size + 1);
+    disps.reserve(mpi_size_parent + 1);
     disps.push_back(0);
 
     // Loop over all PE and find UID intersection.
-    for (size_t i = 0; i < mpi_size; ++i) {
+    for (size_t i = 0; i < mpi_size_parent; ++i) {
         // Get displaced iterators.
         auto globalUidsBegin = globalUids.begin() + globalDisps[i];
         auto globalUidsEnd   = globalUids.begin() + globalDisps[i + 1];
@@ -204,12 +247,44 @@ std::pair<std::vector<idx_t>, std::vector<int>> getUidIntersection(const std::st
         disps.push_back(static_cast<int>(uidIntersection.size()));
     }
 
+    /*
+    auto last = std::unique(uidIntersection.begin(), uidIntersection.end(),
+                            [](const IdxUid& a, const IdxUid& b) { return a.second == b.second; });
+    uidIntersection.erase(last, uidIntersection.end());
+    */
+        std::vector<idx_t> uidIntersectionFirstOnly(uidIntersection.size());
+        std::vector<uidx_t> uidIntersectionSecondOnly(uidIntersection.size());
+        for (size_t idx = 0; idx < uidIntersection.size(); ++idx) {
+          uidIntersectionFirstOnly[idx] = uidIntersection[idx].first;
+          uidIntersectionSecondOnly[idx] = uidIntersection[idx].second;
+        }
+        worldlog() << "=== UID INTERSECTION => " << uidIntersectionFirstOnly << " :: " << uidIntersectionSecondOnly << std::endl;
+
     // Check that the set of all intersections matches UIDs on local PE.
     if (ATLAS_BUILD_TYPE_DEBUG) {
         auto tempUids = uidIntersection;
         std::sort(tempUids.begin(), tempUids.end(),
                   [](const IdxUid& a, const IdxUid& b) { return a.second < b.second; });
-        ATLAS_ASSERT(tempUids == localUids, "Set of all UID intersections does not match local UIDs.");
+
+
+        std::vector<uidx_t> tempUidsSecondOnly(tempUids.size());
+        for (size_t idx = 0; idx < tempUids.size(); ++idx) {
+          tempUidsSecondOnly[idx] = tempUids[idx].second;
+        }
+
+        std::vector<uidx_t> localUidsSecondOnly(localUids.size());
+        for (size_t idx = 0; idx < localUids.size(); ++idx) {
+          localUidsSecondOnly[idx] = localUids[idx].second;
+        }
+
+        // DEBUG(JC): TODO uncomment this. Should be matching.
+        worldlog() << "getUidIntersection(" << call_count << ") => tempUIDs = " << tempUidsSecondOnly << "{{" << tempUidsSecondOnly.size() << "}}" << std::endl
+                    << "                      => localUIDs = " << localUidsSecondOnly << "{{" << localUidsSecondOnly.size() << "}}" << std::endl << std::flush;
+        
+
+         ATLAS_ASSERT(tempUids.size() == localUids.size(),
+                      "Set of UID intersections is not the same size as the number of local UIDs.");
+         ATLAS_ASSERT(tempUidsSecondOnly == localUidsSecondOnly, "Set of all global UID intersections does not match local UIDs.");
     }
 
     // Return local indices of intersection and displacements.
@@ -274,14 +349,21 @@ void RedistributeGeneric::do_setup() {
     // Communicate UID vectors to all PEs.
     auto sourceGlobalUids                         = std::vector<uidx_t>{};
     auto sourceGlobalDisps                        = std::vector<int>{};
-    std::tie(sourceGlobalUids, sourceGlobalDisps) = communicateUid(mpi_comm_, getUidVal(sourceUidVec));
+    std::tie(sourceGlobalUids, sourceGlobalDisps) = communicateUid(source().mpi_comm(), getUidVal(sourceUidVec));
     auto targetGlobalUids                         = std::vector<uidx_t>{};
     auto targetGlobalDisps                        = std::vector<int>{};
-    std::tie(targetGlobalUids, targetGlobalDisps) = communicateUid(mpi_comm_, getUidVal(targetUidVec));
+    std::tie(targetGlobalUids, targetGlobalDisps) = communicateUid(target().mpi_comm(), getUidVal(targetUidVec));
 
     // Get intersection of local UIDs and Global UIDs.
-    std::tie(sourceLocalIdx_, sourceDisps_) = getUidIntersection(mpi_comm_, sourceUidVec, targetGlobalUids, targetGlobalDisps);
-    std::tie(targetLocalIdx_, targetDisps_) = getUidIntersection(mpi_comm_, targetUidVec, sourceGlobalUids, sourceGlobalDisps);
+    std::tie(sourceLocalIdx_, sourceDisps_) = getUidIntersection(sourceUidVec, targetGlobalUids, targetGlobalDisps);
+
+    // NOTE(JC): It is this second call which has mismatch
+    std::tie(targetLocalIdx_, targetDisps_) = getUidIntersection(targetUidVec, sourceGlobalUids, sourceGlobalDisps);
+
+    // Check mpi sizes are same (?)
+    worldlog() << "sourceDisps_.size() " << sourceDisps_.size() << " == "
+               << targetDisps_.size() << " targetDisps_.size()" << std::endl;
+    //ATLAS_ASSERT(sourceDisps_.size() == targetDisps_.size());
 }
 
 void RedistributeGeneric::execute(const Field& sourceField, Field& targetField) const {
@@ -381,9 +463,6 @@ void RedistributeGeneric::do_execute(const Field& sourceField, Field& targetFiel
     auto sourceView = array::make_view<Value, Rank>(sourceField);
     auto targetView = array::make_view<Value, Rank>(targetField);
 
-    const auto& comm = mpi::comm(mpi_comm_);
-    auto mpi_size = comm.size();
-
     // Get number of elems per column.
     int elemsPerCol = 1;
     for (int i = 1; i < Rank; ++i) {
@@ -392,18 +471,18 @@ void RedistributeGeneric::do_execute(const Field& sourceField, Field& targetFiel
 
     // Set send displacement and counts vectors.
     auto sendDisps = std::vector<int>{};
-    sendDisps.reserve(mpi_size + 1);
+    sendDisps.reserve(sourceDisps_.size());
     auto sendCounts = std::vector<int>{};
-    sendCounts.reserve(mpi_size);
+    sendCounts.reserve(sourceDisps_.size() - 1);
     std::transform(sourceDisps_.begin(), sourceDisps_.end(), std::back_inserter(sendDisps),
                    [&](const int& disp) { return disp * elemsPerCol; });
     std::adjacent_difference(sendDisps.begin() + 1, sendDisps.end(), std::back_inserter(sendCounts));
 
     // Set recv displacement and counts vectors.
     auto recvDisps = std::vector<int>{};
-    recvDisps.reserve(mpi_size + 1);
+    recvDisps.reserve(targetDisps_.size());
     auto recvCounts = std::vector<int>{};
-    recvCounts.reserve(mpi_size);
+    recvCounts.reserve(targetDisps_.size() - 1);
     std::transform(targetDisps_.begin(), targetDisps_.end(), std::back_inserter(recvDisps),
                    [&](const int& disp) { return disp * elemsPerCol; });
     std::adjacent_difference(recvDisps.begin() + 1, recvDisps.end(), std::back_inserter(recvCounts));
@@ -418,6 +497,7 @@ void RedistributeGeneric::do_execute(const Field& sourceField, Field& targetFiel
     ForEach<Rank>::apply(sourceLocalIdx_, sourceView, [&](const Value& elem) { *sendBufferIt++ = elem; });
 
     // Perform MPI communication.
+    const auto& comm = mpi::comm(mpi_comm_);
     comm.allToAllv(sendBuffer.data(), sendCounts.data(), sendDisps.data(), recvBuffer.data(), recvCounts.data(),
                    recvDisps.data());
 
