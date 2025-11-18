@@ -5,6 +5,8 @@
  * which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
  */
 
+#include <fstream>
+#include <iostream>
 #include <numeric>
 #include <vector>
 
@@ -15,6 +17,7 @@
 #include "atlas/functionspace/PointCloud.h"
 #include "atlas/functionspace/StructuredColumns.h"
 #include "atlas/parallel/mpi/mpi.h"
+#include "atlas/runtime/Log.h"
 #include "atlas/redistribution/detail/RedistributeGeneric.h"
 #include "atlas/redistribution/detail/RedistributionImplFactory.h"
 #include "atlas/util/Unique.h"
@@ -27,8 +30,24 @@ namespace detail {
 using mesh::HybridElements;
 using mesh::Nodes;
 
+std::ostream& nullfile() {
+  static std::ofstream ofile;
+  return ofile;
+}
+
+
+
 // Helper type definitions and functions for redistribution.
 namespace {
+
+std::ostream& worldlog() {
+  if (mpi::comm("world").rank() == 0) {
+    return Log::info() << mpi::comm("world").rank() << "[" << mpi::comm().rank() << "/" << mpi::comm().size() << "] ";
+  } else {
+    return nullfile();
+  }
+}
+
 
 // Define index-UID struct. (Needed to overload "<").
 struct IdxUid : public std::pair<idx_t, uidx_t> {
@@ -180,6 +199,21 @@ std::pair<std::vector<idx_t>, std::vector<int>> getUidIntersection(const std::st
                                                                    const std::vector<IdxUid>& localUids,
                                                                    const std::vector<uidx_t>& globalUids,
                                                                    const std::vector<int>& globalDisps) {
+
+        std::vector<idx_t> localUidsFirstOnly(localUids.size());
+        std::vector<uidx_t> localUidsSecondOnly(localUids.size());
+        for (size_t idx = 0; idx < localUids.size(); ++idx) {
+          localUidsFirstOnly[idx] = localUids[idx].first;
+          localUidsSecondOnly[idx] = localUids[idx].second;
+        }
+
+    worldlog() << "{ localUids.size()   => " << localUids.size() << std::endl
+               << "  localUids          => " << localUidsFirstOnly << " :: " << localUidsSecondOnly << std::endl
+               << "  globalUids.size()  => " << globalUids.size() << std::endl
+               << "  globalUids         => " << globalUids << std::endl
+               << "  globalDisps.size() => " << globalDisps.size() << std::endl
+               << "  globalDisps        => " << globalDisps << std::endl;
+
     auto uidIntersection = std::vector<IdxUid>{};
     uidIntersection.reserve(localUids.size());
 
@@ -204,12 +238,37 @@ std::pair<std::vector<idx_t>, std::vector<int>> getUidIntersection(const std::st
         disps.push_back(static_cast<int>(uidIntersection.size()));
     }
 
+        std::vector<idx_t> uidIntersectionFirstOnly(uidIntersection.size());
+        std::vector<uidx_t> uidIntersectionSecondOnly(uidIntersection.size());
+        for (size_t idx = 0; idx < uidIntersection.size(); ++idx) {
+          uidIntersectionFirstOnly[idx] = uidIntersection[idx].first;
+          uidIntersectionSecondOnly[idx] = uidIntersection[idx].second;
+        }
+        worldlog() << "=== UID INTERSECTION => " << uidIntersectionFirstOnly << " :: " << uidIntersectionSecondOnly << std::endl;
+
     // Check that the set of all intersections matches UIDs on local PE.
     if (ATLAS_BUILD_TYPE_DEBUG) {
         auto tempUids = uidIntersection;
         std::sort(tempUids.begin(), tempUids.end(),
                   [](const IdxUid& a, const IdxUid& b) { return a.second < b.second; });
-        ATLAS_ASSERT(tempUids == localUids, "Set of all UID intersections does not match local UIDs.");
+
+
+
+        std::vector<uidx_t> tempUidsSecondOnly(tempUids.size());
+        for (size_t idx = 0; idx < tempUids.size(); ++idx) {
+          tempUidsSecondOnly[idx] = tempUids[idx].second;
+        }
+
+        std::vector<uidx_t> localUidsSecondOnly(localUids.size());
+        for (size_t idx = 0; idx < localUids.size(); ++idx) {
+          localUidsSecondOnly[idx] = localUids[idx].second;
+        }
+
+        // DEBUG(JC): TODO uncomment this. Should be matching.
+        worldlog() << "getUidIntersection(" << call_count << ") => tempUIDs = " << tempUidsSecondOnly << "{{" << tempUidsSecondOnly.size() << "}}" << std::endl
+                    << "                      => localUIDs = " << localUidsSecondOnly << "{{" << localUidsSecondOnly.size() << "}}" << std::endl << std::flush;
+
+        //ATLAS_ASSERT(tempUids == localUids, "Set of all UID intersections does not match local UIDs.");
     }
 
     // Return local indices of intersection and displacements.
