@@ -263,7 +263,8 @@ struct ForEach<Rank, Rank> {
 }  // namespace
 
 void RedistributeGeneric::do_setup() {
-    ATLAS_ASSERT( source().mpi_comm() == target().mpi_comm() );
+    // Disable check for sub comm redistribution
+    //ATLAS_ASSERT( source().mpi_comm() == target().mpi_comm() );
 
     mpi_comm_ = source().mpi_comm();
 
