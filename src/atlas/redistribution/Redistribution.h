@@ -65,6 +65,8 @@ public:
 
     /// \brief  Get const reference to target function space.
     const FunctionSpace& target() const;
+
+    void invert();
 };
 
 }  // namespace atlas

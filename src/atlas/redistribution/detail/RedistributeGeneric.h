@@ -15,6 +15,8 @@ namespace atlas {
 namespace redistribution {
 namespace detail {
 
+bool subToParentDirection(const int);
+
 class RedistributeGeneric : public RedistributionImpl {
 public:
     static std::string static_type() { return "RedistributeGeneric"; }
@@ -26,6 +28,8 @@ public:
     void execute(const Field& source, Field& target) const override;
 
     void execute(const FieldSet& source, FieldSet& target) const override;
+
+    void invert() override;
 
 private:
     // Determine datatype.

@@ -200,6 +200,9 @@ std::pair<std::vector<idx_t>, std::vector<int>> getUidIntersection(const std::st
                                                                    const std::vector<uidx_t>& globalUids,
                                                                    const std::vector<int>& globalDisps) {
 
+    static int call_count = -1;
+    ++call_count;
+
         std::vector<idx_t> localUidsFirstOnly(localUids.size());
         std::vector<uidx_t> localUidsSecondOnly(localUids.size());
         for (size_t idx = 0; idx < localUids.size(); ++idx) {
@@ -318,6 +321,18 @@ struct ForEach<Rank, Rank> {
 
 }  // namespace
 
+
+// HACKY!
+bool subToParentDirection(const int setter = -1) {
+  static bool isInParentDirection = false;
+
+  if (setter > -1) {
+    isInParentDirection = static_cast<bool>(setter);
+  }
+
+  return isInParentDirection;
+}
+
 void RedistributeGeneric::do_setup() {
     //ATLAS_ASSERT( source().mpi_comm() == target().mpi_comm() );
 
@@ -333,10 +348,19 @@ void RedistributeGeneric::do_setup() {
     // Communicate UID vectors to all PEs.
     auto sourceGlobalUids                         = std::vector<uidx_t>{};
     auto sourceGlobalDisps                        = std::vector<int>{};
-    std::tie(sourceGlobalUids, sourceGlobalDisps) = communicateUid(mpi_comm_, getUidVal(sourceUidVec));
+
+    std::string tmp_comm = mpi_comm_;
+    if (subToParentDirection()) {
+      tmp_comm = source().mpi_comm();
+    }
+    std::tie(sourceGlobalUids, sourceGlobalDisps) = communicateUid(tmp_comm, getUidVal(sourceUidVec));
+
     auto targetGlobalUids                         = std::vector<uidx_t>{};
     auto targetGlobalDisps                        = std::vector<int>{};
-    std::tie(targetGlobalUids, targetGlobalDisps) = communicateUid(mpi_comm_, getUidVal(targetUidVec));
+    if (subToParentDirection()) {
+      tmp_comm = target().mpi_comm();
+    }
+    std::tie(targetGlobalUids, targetGlobalDisps) = communicateUid(tmp_comm, getUidVal(targetUidVec));
 
     // Get intersection of local UIDs and Global UIDs.
     std::tie(sourceLocalIdx_, sourceDisps_) = getUidIntersection(mpi_comm_, sourceUidVec, targetGlobalUids, targetGlobalDisps);
@@ -482,6 +506,12 @@ void RedistributeGeneric::do_execute(const Field& sourceField, Field& targetFiel
 
     // Copy recvBuffer to targetField.
     ForEach<Rank>::apply(targetLocalIdx_, targetView, [&](Value& elem) { elem = *recvBufferIt++; });
+}
+
+void RedistributeGeneric::invert() {
+  RedistributionImpl::invert();
+  std::swap(sourceLocalIdx_, targetLocalIdx_);
+  std::swap(sourceDisps_, targetDisps_);
 }
 
 namespace {

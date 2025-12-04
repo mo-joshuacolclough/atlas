@@ -48,4 +48,8 @@ const FunctionSpace& Redistribution::target() const {
     return get()->target();
 }
 
+void Redistribution::invert() {
+    return get()->invert();
+}
+
 }  // namespace atlas

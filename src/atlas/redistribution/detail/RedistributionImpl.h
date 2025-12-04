@@ -53,6 +53,8 @@ public:
     /// \brief  Get const reference to target function space.
     const FunctionSpace& target() const;
 
+    virtual void invert();
+
 private:
     FunctionSpace source_;
     FunctionSpace target_;

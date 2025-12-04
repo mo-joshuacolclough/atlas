@@ -25,6 +25,10 @@ const FunctionSpace& RedistributionImpl::target() const {
     return target_;
 }
 
+void RedistributionImpl::invert() {
+  std::swap(source_, target_);
+}
+
 }  // namespace detail
 }  // namespace redistribution
 }  // namespace atlas
