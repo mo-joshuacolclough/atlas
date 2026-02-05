@@ -500,13 +500,12 @@ StructuredColumns::StructuredColumns(const Grid& grid, const Vertical& vertical,
 
     grid::Distribution distribution;
 
-    /*{
+    {
         // NOTE(JC): Causes issues where comm is reset to world unintentionally.
        
         mpi::Scope mpi_scope(mpi_comm_);
         ATLAS_TRACE_SCOPE("Partitioning grid") { distribution = grid::Distribution(grid, partitioner); }
-    }*/
-    distribution = grid::Distribution(grid, partitioner);
+    }
 
     setup(distribution, config);
 }
