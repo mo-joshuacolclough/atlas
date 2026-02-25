@@ -150,6 +150,7 @@ void SphericalVector::do_execute(const Field& sourceField, Field& targetField,
   ATLAS_TRACE("atlas::interpolation::method::SphericalVector::do_execute()");
 
   if (targetField.size() == 0) {
+    haloExchange(sourceField);
     return;
   }
 
@@ -194,6 +195,7 @@ void SphericalVector::do_execute_adjoint(Field& sourceField,
       "atlas::interpolation::method::SphericalVector::do_execute_adjoint()");
 
   if (targetField.size() == 0) {
+    adjointHaloExchange(sourceField);
     return;
   }
 
